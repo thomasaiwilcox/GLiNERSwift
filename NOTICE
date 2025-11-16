@@ -1,0 +1,25 @@
+GLiNERSwift
+Copyright 2025 GLiNERSwift Contributors
+
+This product includes software developed as part of GLiNERSwift, a Swift
+implementation of the GLiNER2 Named Entity Recognition model.
+
+This software is based on and incorporates concepts from:
+
+GLiNER2
+Copyright (c) 2024 Fastino AI
+Licensed under the Apache License, Version 2.0
+https://github.com/fastino-ai/GLiNER2
+
+GLiNER (Original)
+Copyright (c) 2024 Urchade Zaratiana
+Licensed under the Apache License, Version 2.0
+https://github.com/urchade/GLiNER
+
+This implementation:
+- Uses GLiNER2 model architecture and weights
+- Reimplements the inference pipeline in Swift for Apple platforms
+- Integrates with Core ML for optimized performance on Apple Silicon
+- Provides a native Swift API compatible with the Python GLiNER2 API
+
+For the complete Apache License 2.0 text, see the LICENSE file.

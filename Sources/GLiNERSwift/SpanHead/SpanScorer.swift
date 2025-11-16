@@ -1,0 +1,106 @@
+import Foundation
+
+struct SpanScores {
+    let values: [[[Float]]]
+}
+
+/// Prepares span head inputs and delegates scoring to the Core ML model.
+final class SpanScorer {
+    private let metadata: SpanHeadMetadata
+    private let scoringModel: GLiNERSpanScoringModel
+
+    init(metadata: SpanHeadMetadata, scoringModel: GLiNERSpanScoringModel) {
+        self.metadata = metadata
+        self.scoringModel = scoringModel
+    }
+
+    func score(hiddenStates: [[Float]], encoding: PromptEncoding, labelCount: Int) async throws -> SpanScores {
+        guard hiddenStates.count == encoding.sequenceLength else {
+            throw GLiNERError.encodingError("Hidden state count \(hiddenStates.count) does not match token count \(encoding.sequenceLength)")
+        }
+        guard labelCount > 0 else {
+            return SpanScores(values: [])
+        }
+        guard !encoding.textWordRanges.isEmpty else {
+            return SpanScores(values: [])
+        }
+        guard encoding.wordMask.count == encoding.sequenceLength else {
+            throw GLiNERError.encodingError("Word mask length \(encoding.wordMask.count) does not align with input length \(encoding.sequenceLength)")
+        }
+        guard encoding.classTokenPositions.count >= labelCount else {
+            throw GLiNERError.encodingError("Expected at least \(labelCount) class tokens but found \(encoding.classTokenPositions.count)")
+        }
+
+        let promptEmbeddings = try gatherPromptEmbeddings(from: hiddenStates, classPositions: encoding.classTokenPositions, labelCount: labelCount)
+        let wordEmbeddings = try gatherWordEmbeddings(from: hiddenStates, encoding: encoding)
+        guard !wordEmbeddings.isEmpty else {
+            return SpanScores(values: [])
+        }
+
+        let spanInputs = buildSpanInputs(wordCount: wordEmbeddings.count)
+
+        let scores = try await scoringModel.score(
+            wordEmbeddings: wordEmbeddings,
+            promptEmbeddings: promptEmbeddings,
+            spanIndex: spanInputs.indices,
+            spanMask: spanInputs.mask,
+            labelCount: labelCount,
+            maxWidth: metadata.maxWidth
+        )
+
+        return SpanScores(values: scores)
+    }
+
+    var maxWordCount: Int {
+        scoringModel.limits.maxWordCount
+    }
+
+    private func gatherPromptEmbeddings(from hiddenStates: [[Float]], classPositions: [Int], labelCount: Int) throws -> [[Float]] {
+        var embeddings: [[Float]] = []
+        embeddings.reserveCapacity(labelCount)
+        for idx in 0..<labelCount {
+            let tokenPosition = classPositions[idx]
+            guard tokenPosition < hiddenStates.count else {
+                throw GLiNERError.encodingError("Class token index \(tokenPosition) exceeds hidden state length \(hiddenStates.count)")
+            }
+            embeddings.append(hiddenStates[tokenPosition])
+        }
+        return embeddings
+    }
+
+    private func gatherWordEmbeddings(from hiddenStates: [[Float]], encoding: PromptEncoding) throws -> [[Float]] {
+        var wordEmbeddings = Array(repeating: [Float](), count: encoding.textWordCount)
+        var seen = Array(repeating: false, count: encoding.textWordCount)
+        for (tokenIndex, marker) in encoding.wordMask.enumerated() where marker > 0 {
+            let wordIndex = marker - 1
+            guard wordIndex < wordEmbeddings.count else { continue }
+            if !seen[wordIndex] {
+                wordEmbeddings[wordIndex] = hiddenStates[tokenIndex]
+                seen[wordIndex] = true
+            }
+        }
+        guard seen.allSatisfy({ $0 }) else {
+            throw GLiNERError.encodingError("Word mask missing embeddings for some words (only \(seen.filter { $0 }.count) / \(seen.count) available)")
+        }
+        return wordEmbeddings
+    }
+
+    private func buildSpanInputs(wordCount: Int) -> (indices: [[Float]], mask: [[Float]]) {
+        guard wordCount > 0 else { return ([], []) }
+        var indices: [[Float]] = []
+        indices.reserveCapacity(wordCount * metadata.maxWidth)
+        var mask = Array(repeating: Array(repeating: Float(0), count: metadata.maxWidth), count: wordCount)
+        for start in 0..<wordCount {
+            for widthIndex in 0..<metadata.maxWidth {
+                let end = start + widthIndex
+                if end < wordCount {
+                    mask[start][widthIndex] = 1
+                    indices.append([Float(start), Float(end)])
+                } else {
+                    indices.append([0, 0])
+                }
+            }
+        }
+        return (indices, mask)
+    }
+}

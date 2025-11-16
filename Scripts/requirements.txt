@@ -1,0 +1,7 @@
+# Python dependencies for GLiNER2 conversion and testing scripts
+
+torch>=2.0.0
+coremltools>=7.0
+gliner>=0.2.0
+transformers>=4.30.0
+numpy>=1.24.0

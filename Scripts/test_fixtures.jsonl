@@ -1,0 +1,3 @@
+{"id": "test_01", "text": "John Smith works at Apple Inc. in Cupertino, California.", "labels": ["person", "organization", "location"], "threshold": 0.3}
+{"id": "test_02", "text": "Marie Curie discovered radium and polonium in Paris.", "labels": ["person", "chemical", "location"], "threshold": 0.3}
+{"id": "test_03", "text": "Tesla Motors, founded by Elon Musk, builds electric vehicles.", "labels": ["organization", "person", "product"], "threshold": 0.3}

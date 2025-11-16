@@ -1,0 +1,92 @@
+{
+  "model": "urchade/gliner_small-v2.1",
+  "hidden_size": 512,
+  "max_width": 12,
+  "class_token_index": 128002,
+  "ent_token": "<<ENT>>",
+  "sep_token": "<<SEP>>",
+  "special_tokens": {
+    "flert_token": "[FLERT]",
+    "flert_token_index": 128001,
+    "ent_token_index": 128002,
+    "sep_token_index": 128003,
+    "mask_token_index": 128000,
+    "cls_token_index": 1,
+    "base_sep_token_index": 2,
+    "pad_token_index": 0
+  },
+  "layers": {
+    "project_start": {
+      "fc1": {
+        "weight": "project_start_fc1.weight.bin",
+        "bias": "project_start_fc1.bias.bin",
+        "in_features": 512,
+        "out_features": 2048
+      },
+      "fc2": {
+        "weight": "project_start_fc2.weight.bin",
+        "bias": "project_start_fc2.bias.bin",
+        "in_features": 2048,
+        "out_features": 512
+      }
+    },
+    "project_end": {
+      "fc1": {
+        "weight": "project_end_fc1.weight.bin",
+        "bias": "project_end_fc1.bias.bin",
+        "in_features": 512,
+        "out_features": 2048
+      },
+      "fc2": {
+        "weight": "project_end_fc2.weight.bin",
+        "bias": "project_end_fc2.bias.bin",
+        "in_features": 2048,
+        "out_features": 512
+      }
+    },
+    "out_project": {
+      "fc1": {
+        "weight": "out_project_fc1.weight.bin",
+        "bias": "out_project_fc1.bias.bin",
+        "in_features": 1024,
+        "out_features": 2048
+      },
+      "fc2": {
+        "weight": "out_project_fc2.weight.bin",
+        "bias": "out_project_fc2.bias.bin",
+        "in_features": 2048,
+        "out_features": 512
+      }
+    },
+    "prompt_projection": {
+      "fc1": {
+        "weight": "prompt_projection_fc1.weight.bin",
+        "bias": "prompt_projection_fc1.bias.bin",
+        "in_features": 512,
+        "out_features": 2048
+      },
+      "fc2": {
+        "weight": "prompt_projection_fc2.weight.bin",
+        "bias": "prompt_projection_fc2.bias.bin",
+        "in_features": 2048,
+        "out_features": 512
+      }
+    }
+  },
+  "rnn": {
+    "input_size": 512,
+    "hidden_size": 256,
+    "num_layers": 1,
+    "bidirectional": true,
+    "forward": {
+      "weight_ih": "rnn_forward.weight_ih.bin",
+      "weight_hh": "rnn_forward.weight_hh.bin",
+      "bias": "rnn_forward.bias.bin"
+    },
+    "backward": {
+      "weight_ih": "rnn_backward.weight_ih.bin",
+      "weight_hh": "rnn_backward.weight_hh.bin",
+      "bias": "rnn_backward.bias.bin"
+    }
+  }
+}
