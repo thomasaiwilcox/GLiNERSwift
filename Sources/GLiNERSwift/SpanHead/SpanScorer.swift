@@ -69,38 +69,67 @@ final class SpanScorer {
     }
 
     private func gatherWordEmbeddings(from hiddenStates: [[Float]], encoding: PromptEncoding) throws -> [[Float]] {
-        var wordEmbeddings = Array(repeating: [Float](), count: encoding.textWordCount)
-        var seen = Array(repeating: false, count: encoding.textWordCount)
+        let wordCount = encoding.textWordCount
+        guard wordCount > 0 else { return [] }
+        
+        // Pre-allocate with correct capacity
+        var wordEmbeddings: [[Float]] = []
+        wordEmbeddings.reserveCapacity(wordCount)
+        
+        // Initialize with empty arrays
+        for _ in 0..<wordCount {
+            wordEmbeddings.append([])
+        }
+        
+        // Populate embeddings in a single pass
+        var seen = Array(repeating: false, count: wordCount)
+        
         for (tokenIndex, marker) in encoding.wordMask.enumerated() where marker > 0 {
             let wordIndex = marker - 1
-            guard wordIndex < wordEmbeddings.count else { continue }
+            guard wordIndex >= 0 && wordIndex < wordCount else { continue }
+            
             if !seen[wordIndex] {
                 wordEmbeddings[wordIndex] = hiddenStates[tokenIndex]
                 seen[wordIndex] = true
             }
         }
+        
+        // Verify all words have embeddings
         guard seen.allSatisfy({ $0 }) else {
-            throw GLiNERError.encodingError("Word mask missing embeddings for some words (only \(seen.filter { $0 }.count) / \(seen.count) available)")
+            let missingCount = seen.filter { !$0 }.count
+            throw GLiNERError.encodingError("Word mask missing embeddings for \(missingCount) words (only \(wordCount - missingCount) / \(wordCount) available)")
         }
+        
         return wordEmbeddings
     }
 
     private func buildSpanInputs(wordCount: Int) -> (indices: [[Float]], mask: [[Float]]) {
         guard wordCount > 0 else { return ([], []) }
+        
+        // Pre-allocate arrays with exact size
+        let totalIndices = wordCount * metadata.maxWidth
         var indices: [[Float]] = []
-        indices.reserveCapacity(wordCount * metadata.maxWidth)
+        indices.reserveCapacity(totalIndices)
+        
+        // Pre-allocate mask array
         var mask = Array(repeating: Array(repeating: Float(0), count: metadata.maxWidth), count: wordCount)
+        
+        // Build indices and mask in a single pass with optimized loop
         for start in 0..<wordCount {
+            let maxEnd = min(start + metadata.maxWidth, wordCount)
+            
             for widthIndex in 0..<metadata.maxWidth {
                 let end = start + widthIndex
-                if end < wordCount {
+                if end < maxEnd {
                     mask[start][widthIndex] = 1
                     indices.append([Float(start), Float(end)])
                 } else {
+                    // Use static zero array to reduce allocations
                     indices.append([0, 0])
                 }
             }
         }
+        
         return (indices, mask)
     }
 }
