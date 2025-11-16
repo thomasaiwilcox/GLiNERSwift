@@ -21,47 +21,70 @@ public class ChunkProcessor {
             return entitiesPerChunk[0]
         }
         
-        // Flatten all entities
-        var allEntities = entitiesPerChunk.flatMap { $0 }
+        // Flatten all entities with estimated capacity
+        let estimatedCount = entitiesPerChunk.reduce(0) { $0 + $1.count }
+        var allEntities: [Entity] = []
+        allEntities.reserveCapacity(estimatedCount)
+        
+        for entities in entitiesPerChunk {
+            allEntities.append(contentsOf: entities)
+        }
         
         // Sort by score (descending)
         allEntities.sort { $0.score > $1.score }
         
-        // Deduplicate overlapping entities
+        // Deduplicate overlapping entities with optimized algorithm
         return deduplicateEntities(allEntities)
     }
     
-    /// Remove duplicate entities from overlapping chunks
+    /// Remove duplicate entities from overlapping chunks using optimized algorithm
     private func deduplicateEntities(_ entities: [Entity]) -> [Entity] {
-        var selected: [Entity] = []
+        guard !entities.isEmpty else {
+            return []
+        }
         
+        var selected: [Entity] = []
+        selected.reserveCapacity(entities.count / 2) // Heuristic pre-allocation
+        
+        // Group by label for efficient deduplication
+        var byLabel: [String: [Entity]] = [:]
         for entity in entities {
-            // Check if this entity overlaps significantly with any already selected
-            let isDuplicate = selected.contains { existing in
-                guard existing.label == entity.label else {
-                    return false
+            byLabel[entity.label, default: []].append(entity)
+        }
+        
+        // Process each label group independently
+        for (_, labelEntities) in byLabel {
+            var labelSelected: [Entity] = []
+            
+            for entity in labelEntities {
+                // Check if this entity overlaps significantly with any already selected
+                let isDuplicate = labelSelected.contains { existing in
+                    hasSignificantOverlapFast(entity1: existing, entity2: entity)
                 }
                 
-                // Check for significant overlap
-                return hasSignificantOverlap(entity1: existing, entity2: entity)
+                if !isDuplicate {
+                    labelSelected.append(entity)
+                }
             }
             
-            if !isDuplicate {
-                selected.append(entity)
+            selected.append(contentsOf: labelSelected)
+        }
+        
+        // Re-sort by score to maintain best-first order
+        return selected.sorted { $0.score > $1.score }
+    }
+    
+    /// Optimized overlap check with early exit
+    @inline(__always)
+    private func hasSignificantOverlapFast(entity1: Entity, entity2: Entity) -> Bool {
+        // Quick text comparison first (cheapest check)
+        if entity1.text.count == entity2.text.count {
+            if entity1.text.lowercased() == entity2.text.lowercased() {
+                return true
             }
         }
         
-        return selected
-    }
-    
-    /// Check if two entities have significant overlap
-    private func hasSignificantOverlap(entity1: Entity, entity2: Entity) -> Bool {
-        // Check text similarity (for entities from different chunks that represent the same thing)
-        if entity1.text.lowercased() == entity2.text.lowercased() {
-            return true
-        }
-        
-        // Check range overlap using start/end
+        // Range overlap check with early exit
         let start1 = entity1.start
         let end1 = entity1.end
         let start2 = entity2.start
