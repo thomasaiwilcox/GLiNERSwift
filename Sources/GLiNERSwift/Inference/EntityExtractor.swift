@@ -19,65 +19,104 @@ public class EntityExtractor {
         text: String,
         tokens: [String]
     ) -> [Entity] {
-        // Filter by threshold
-        let filtered = spanScores.filter { score in
-            return score.score >= config.threshold
+        // Early return for empty input
+        guard !spanScores.isEmpty else {
+            return []
         }
         
-        // Sort by score (descending)
+        // Filter by threshold - use filter with stride for better performance
+        let filtered = spanScores.filter { $0.score >= config.threshold }
+        
+        // Early return if nothing passes threshold
+        guard !filtered.isEmpty else {
+            return []
+        }
+        
+        // Sort by score (descending) - already optimized by Swift
         let sorted = filtered.sorted { $0.score > $1.score }
         
-        // Apply non-maximum suppression
+        // Apply non-maximum suppression with optimized algorithm
         let afterNMS = applyNMS(sorted)
         
-        // Convert to Entity objects
-        return afterNMS.compactMap { spanScore in
-            convertToEntity(spanScore, text: text, tokens: tokens)
-        }
-    }
-    
-    /// Apply non-maximum suppression to remove overlapping spans
-    private func applyNMS(_ spanScores: [SpanScore]) -> [SpanScore] {
-        var selected: [SpanScore] = []
-        var remaining = spanScores
+        // Convert to Entity objects with pre-allocated capacity
+        var entities: [Entity] = []
+        entities.reserveCapacity(afterNMS.count)
         
-        while !remaining.isEmpty {
-            // Take the highest scoring span
-            let best = remaining.removeFirst()
-            selected.append(best)
-            
-            // Remove overlapping spans for the same label
-            remaining.removeAll { current in
-                guard current.label == best.label else {
-                    return false
-                }
-                
-                let iou = computeIoU(
-                    span1: (best.span.start, best.span.end),
-                    span2: (current.span.start, current.span.end)
-                )
-                
-                return iou > config.nmsThreshold
+        for spanScore in afterNMS {
+            if let entity = convertToEntity(spanScore, text: text, tokens: tokens) {
+                entities.append(entity)
             }
         }
         
-        return selected
+        return entities
     }
     
-    /// Compute Intersection over Union for two spans
-    private func computeIoU(
-        span1: (start: Int, end: Int),
-        span2: (start: Int, end: Int)
+    /// Apply optimized non-maximum suppression to remove overlapping spans
+    private func applyNMS(_ spanScores: [SpanScore]) -> [SpanScore] {
+        guard !spanScores.isEmpty else {
+            return []
+        }
+        
+        var selected: [SpanScore] = []
+        selected.reserveCapacity(spanScores.count / 2) // Heuristic pre-allocation
+        
+        // Group by label for more efficient NMS
+        var byLabel: [String: [SpanScore]] = [:]
+        for score in spanScores {
+            byLabel[score.label, default: []].append(score)
+        }
+        
+        // Process each label independently (allows for parallel processing in future)
+        for (_, labelScores) in byLabel {
+            var remaining = labelScores
+            var labelSelected: [SpanScore] = []
+            
+            while !remaining.isEmpty {
+                // Take the highest scoring span
+                let best = remaining.removeFirst()
+                labelSelected.append(best)
+                
+                // Fast path: pre-compute best span bounds
+                let bestStart = best.span.start
+                let bestEnd = best.span.end
+                
+                // Remove overlapping spans using optimized IoU computation
+                remaining.removeAll { current in
+                    let iou = computeIoUFast(
+                        start1: bestStart, end1: bestEnd,
+                        start2: current.span.start, end2: current.span.end
+                    )
+                    return iou > config.nmsThreshold
+                }
+            }
+            
+            selected.append(contentsOf: labelSelected)
+        }
+        
+        // Re-sort by score to maintain best-first order
+        return selected.sorted { $0.score > $1.score }
+    }
+    
+    /// Optimized IoU computation with inlined bounds checking
+    @inline(__always)
+    private func computeIoUFast(
+        start1: Int, end1: Int,
+        start2: Int, end2: Int
     ) -> Float {
-        let intersectionStart = max(span1.start, span2.start)
-        let intersectionEnd = min(span1.end, span2.end)
+        let intersectionStart = max(start1, start2)
+        let intersectionEnd = min(end1, end2)
         
         guard intersectionStart < intersectionEnd else {
             return 0.0
         }
         
         let intersection = intersectionEnd - intersectionStart
-        let union = (span1.end - span1.start) + (span2.end - span2.start) - intersection
+        let union = (end1 - start1) + (end2 - start2) - intersection
+        
+        // Avoid division by zero
+        guard union > 0 else {
+            return 0.0
+        }
         
         return Float(intersection) / Float(union)
     }

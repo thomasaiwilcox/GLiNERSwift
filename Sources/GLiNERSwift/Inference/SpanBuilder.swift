@@ -15,6 +15,8 @@ public struct Span {
 /// Builds span representations from token embeddings
 public class SpanBuilder {
     private let config: Configuration
+    // Reusable buffer for pooling operations to reduce allocations
+    private var poolingBuffer: [Float] = []
     
     public init(config: Configuration = .default) {
         self.config = config
@@ -36,15 +38,25 @@ public class SpanBuilder {
         
         // Find valid token range (exclude padding)
         let validTokenCount = attentionMask.prefix(while: { $0 == 1 }).count
-        guard validTokenCount > 0 else {
+        guard validTokenCount > 0, !hiddenStates.isEmpty else {
             return []
         }
         
+        // Pre-allocate spans array with estimated capacity to reduce reallocations
+        let estimatedSpanCount = min(validTokenCount * config.maxSpanLength / 2, 10000)
         var spans: [Span] = []
+        spans.reserveCapacity(estimatedSpanCount)
+        
+        // Ensure pooling buffer is sized appropriately
+        let hiddenDim = hiddenStates[0].count
+        if poolingBuffer.count != hiddenDim {
+            poolingBuffer = [Float](repeating: 0, count: hiddenDim)
+        }
         
         // Enumerate all possible spans up to maxSpanLength
         for start in 0..<validTokenCount {
-            for length in 1...min(config.maxSpanLength, validTokenCount - start) {
+            let maxLength = min(config.maxSpanLength, validTokenCount - start)
+            for length in 1...maxLength {
                 let end = start + length
                 
                 // Skip if this would exceed valid tokens
@@ -92,10 +104,24 @@ public class SpanBuilder {
         
         let hiddenDim = hiddenStates[0].count
         let spanLength = end - start
-        var result = [Float](repeating: 0, count: hiddenDim)
         
-        // Sum all token embeddings in the span
-        for tokenIdx in start..<end {
+        // Optimize for single-token spans (common case)
+        if spanLength == 1 {
+            return hiddenStates[start]
+        }
+        
+        // Use pooling buffer to reduce allocations
+        var result = poolingBuffer
+        
+        // Initialize with first embedding
+        result.withUnsafeMutableBufferPointer { resultPtr in
+            hiddenStates[start].withUnsafeBufferPointer { firstPtr in
+                resultPtr.baseAddress?.initialize(from: firstPtr.baseAddress!, count: hiddenDim)
+            }
+        }
+        
+        // Sum remaining token embeddings in the span using vectorized addition
+        for tokenIdx in (start + 1)..<end {
             let embedding = hiddenStates[tokenIdx]
             vDSP_vadd(result, 1, embedding, 1, &result, 1, vDSP_Length(hiddenDim))
         }
@@ -116,10 +142,17 @@ public class SpanBuilder {
             return []
         }
         
+        let spanLength = end - start
+        
+        // Optimize for single-token spans
+        if spanLength == 1 {
+            return hiddenStates[start]
+        }
+        
         let hiddenDim = hiddenStates[0].count
         var result = hiddenStates[start]
         
-        // Take max across all dimensions
+        // Take max across all dimensions using vectorized operations
         for tokenIdx in (start + 1)..<end {
             let embedding = hiddenStates[tokenIdx]
             vDSP_vmax(result, 1, embedding, 1, &result, 1, vDSP_Length(hiddenDim))

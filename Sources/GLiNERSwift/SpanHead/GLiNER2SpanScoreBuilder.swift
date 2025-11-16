@@ -1,4 +1,5 @@
 import Foundation
+import Accelerate
 
 /// Builds span score tensors using GLiNER2's structure-aware projections.
 struct GLiNER2SpanScoreBuilder {
@@ -33,6 +34,7 @@ struct GLiNER2SpanScoreBuilder {
             print("[DEBUG] Span/label norms: span=\(spanNorm) label=\(labelNorm) spanMax=\(spanMax) labelMax=\(labelMax)")
         }
 
+        // Pre-allocate scores array
         var scores = Array(
             repeating: Array(
                 repeating: [Float](repeating: 0, count: labelEmbeddings.count),
@@ -41,6 +43,11 @@ struct GLiNER2SpanScoreBuilder {
             count: spanEmbeddings.count
         )
 
+        // Pre-flatten label embeddings for better cache locality
+        let numLabels = labelEmbeddings.count
+        let flatLabelEmbeddings = labelEmbeddings.flatMap { $0 }
+        
+        // Process spans with vectorized operations
         for (wordIndex, widths) in spanEmbeddings.enumerated() {
             let maskRow = wordIndex < spanMask.count ? spanMask[wordIndex] : []
             for (widthIndex, spanVector) in widths.enumerated() {
@@ -48,9 +55,14 @@ struct GLiNER2SpanScoreBuilder {
                     continue
                 }
                 guard spanVector.count == hiddenSize else { continue }
-                for (labelIndex, labelVector) in labelEmbeddings.enumerated() where labelVector.count == hiddenSize {
-                    scores[wordIndex][widthIndex][labelIndex] = dotProduct(spanVector, labelVector)
-                }
+                
+                // Vectorized batch computation of all label similarities for this span
+                scores[wordIndex][widthIndex] = batchDotProduct(
+                    spanVector: spanVector,
+                    labelEmbeddings: flatLabelEmbeddings,
+                    numLabels: numLabels,
+                    hiddenSize: hiddenSize
+                )
             }
         }
 
@@ -59,12 +71,46 @@ struct GLiNER2SpanScoreBuilder {
 }
 
 private extension GLiNER2SpanScoreBuilder {
+    /// Compute dot product using Accelerate framework for better performance
     func dotProduct(_ lhs: [Float], _ rhs: [Float]) -> Float {
-        var result: Float = 0
         let count = min(lhs.count, rhs.count)
-        for idx in 0..<count {
-            result += lhs[idx] * rhs[idx]
-        }
+        guard count > 0 else { return 0.0 }
+        
+        var result: Float = 0
+        vDSP_dotpr(lhs, 1, rhs, 1, &result, vDSP_Length(count))
         return result
+    }
+    
+    /// Batch compute dot products between one span and all labels using matrix-vector multiplication
+    func batchDotProduct(
+        spanVector: [Float],
+        labelEmbeddings: [Float],
+        numLabels: Int,
+        hiddenSize: Int
+    ) -> [Float] {
+        guard hiddenSize > 0, numLabels > 0 else { return [] }
+        
+        var scores = [Float](repeating: 0, count: numLabels)
+        
+        // Use BLAS matrix-vector multiplication: scores = labelEmbeddings * spanVector
+        // labelEmbeddings is treated as (numLabels x hiddenSize) matrix in row-major order
+        // spanVector is (hiddenSize x 1) vector
+        // Result is (numLabels x 1) vector
+        cblas_sgemv(
+            CblasRowMajor,          // Row-major order
+            CblasNoTrans,           // Don't transpose matrix
+            Int32(numLabels),       // Number of rows
+            Int32(hiddenSize),      // Number of columns
+            1.0,                    // Alpha (scaling factor)
+            labelEmbeddings,        // Matrix A
+            Int32(hiddenSize),      // Leading dimension of A
+            spanVector,             // Vector x
+            1,                      // Increment for x
+            0.0,                    // Beta (scaling factor for y)
+            &scores,                // Result vector y
+            1                       // Increment for y
+        )
+        
+        return scores
     }
 }
