@@ -14,7 +14,7 @@ This guide walks you through setting up GLiNERSwift from source.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/tomaarsen/GLiNERSwift.git
+git clone https://github.com/thomasaiwilcox/GLiNERSwift.git
 cd GLiNERSwift
 ```
 
@@ -119,7 +119,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/tomaarsen/GLiNERSwift.git", branch: "main")
+    .package(url: "https://github.com/thomasaiwilcox/GLiNERSwift.git", branch: "main")
 ]
 ```
 
@@ -214,7 +214,7 @@ For continuous integration, add a setup step to generate models:
 
 ## Pre-built Models (Optional)
 
-If you prefer not to run the conversion script, you can download pre-built models from [Releases](https://github.com/tomaarsen/GLiNERSwift/releases):
+If you prefer not to run the conversion script, you can download pre-built models from [Releases](https://github.com/thomasaiwilcox/GLiNERSwift/releases):
 
 1. Download `CoreMLArtifacts.zip`
 2. Extract to project root

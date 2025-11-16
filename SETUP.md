@@ -22,7 +22,7 @@ Complete guide to get GLiNERSwift up and running.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/tomaarsen/GLiNERSwift.git
+git clone https://github.com/thomasaiwilcox/GLiNERSwift.git
 cd GLiNERSwift
 ```
 
