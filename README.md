@@ -21,24 +21,22 @@ Add GLiNERSwift to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/tomaarsen/GLiNERSwift.git", branch: "main")
+    .package(url: "https://github.com/thomasaiwilcox/GLiNERSwift.git", branch: "main")
 ]
 ```
 
-### Git LFS Requirement
+### Model Setup
 
-This package uses Git LFS to store the Core ML model. Ensure you have Git LFS installed:
-
-```bash
-brew install git-lfs
-git lfs install
-```
-
-After cloning, pull LFS files:
+The Core ML models are **not included in this repository** to keep it lightweight. After cloning, you need to generate them:
 
 ```bash
-git lfs pull
+cd Scripts
+python3 convert_to_coreml.py
 ```
+
+This will download the GLiNER2 model from HuggingFace and convert it to Core ML format (~1.5GB).
+
+See [SETUP.md](SETUP.md) for detailed setup instructions.
 
 ## Quick Start
 
